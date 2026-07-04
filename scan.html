@@ -1,141 +1,231 @@
-const MAIN_APP_URL = "https://script.google.com/macros/s/AKfycbw5uU_TC5-WhYFABXTd69ODK2iDx_0Veplf3fZnCRxia0SYSLWJyTMMuIHhu6fuHSdO/exec";
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>สแกนบาร์โค้ดเลนส์ - Smart IOL Scan</title>
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<style>
+  * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
+  body {
+    margin: 0; padding: 15px;
+    background: #f6f4f9; color: #333;
+    min-height: 100vh;
+  }
+  .header { text-align: center; padding: 10px 0 15px 0; }
+  .header h2 { color: #4a148c; margin: 0 0 4px 0; }
+  .header p { color: #7b1fa2; font-size: 13px; margin: 0; }
 
-let html5QrCode;
-let usingNativeDetector = false;
-let nativeStream = null;
-let nativeDetector = null;
-let nativeScanLoop = null;
+  #reader {
+    width: 100%; max-width: 340px; margin: 0 auto 15px auto;
+    border-radius: 14px; overflow: hidden;
+    border: 3px solid #7b1fa2; background: black;
+  }
+  #reader video { width: 100%; display: block; }
 
-function showResult(text, cls) {
-  const el = document.getElementById('result');
-  el.innerHTML = text;
-  el.className = cls;
-  el.style.display = 'block';
-}
+  .action-select {
+    width: 100%; max-width: 340px; margin: 0 auto 12px auto; display: block;
+    padding: 14px; border-radius: 10px; border: 2px solid #ab47bc;
+    font-size: 15px; font-weight: bold; background: white; color: #4a148c;
+  }
 
-async function startScan() {
-  document.getElementById('btnStart').style.display = 'none';
-  document.getElementById('btnStop').style.display = 'block';
-  document.getElementById('reader').style.display = 'block';
-  showResult('⏳ กำลังเปิดกล้อง กรุณาอนุญาตการใช้กล้องเมื่อมีการถาม...', 'waiting');
+  .btn {
+    width: 100%; max-width: 340px; margin: 0 auto 10px auto; display: block;
+    padding: 15px; border: none; border-radius: 10px;
+    font-size: 15px; font-weight: bold; color: white; cursor: pointer;
+  }
+  .btn-start { background: #7b1fa2; }
+  .btn-stop  { background: #757575; }
 
-  // เช็คว่าเครื่องรองรับ Native BarcodeDetector ไหม
-  if ('BarcodeDetector' in window) {
-    try {
-      const supportedFormats = await BarcodeDetector.getSupportedFormats();
-      if (supportedFormats.includes('code_128')) {
-        startNativeScan();
-        return;
+  #result {
+    max-width: 340px; margin: 15px auto; padding: 15px;
+    border-radius: 12px; display: none; text-align: center;
+    font-size: 14px; line-height: 1.6; border: 2px solid transparent;
+  }
+  .found   { background:#e8f5e9; color:#2e7d32; border-color:#4caf50; }
+  .waiting { background:#f3e5f5; color:#6a1b9a; border-color:#ab47bc; }
+  .warn    { background:#fff3e0; color:#e65100; border-color:#ff9800; }
+
+  #manual-box {
+    max-width: 340px; margin: 20px auto 0 auto; padding: 14px;
+    background: white; border-radius: 12px; border: 1px solid #e1bee7;
+  }
+  #manual-box label { font-size: 12px; color: #7b1fa2; font-weight: bold; }
+  #manual-input {
+    width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px;
+    border: 1px solid #ce93d8; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <h2>สแกนบาร์โค้ดเลนส์</h2>
+    <p>Smart IOL Scan - หน้าสแกนอิสระ</p>
+  </div>
+
+  <select id="action" class="action-select">
+    <option value="ADD">📥 ต้องการ: รับเข้าสต๊อก (+)</option>
+    <option value="USE">📤 ต้องการ: เบิกใช้เลนส์ (-)</option>
+  </select>
+
+  <div id="reader"></div>
+
+  <button id="btnStart" class="btn btn-start" onclick="startScan()">
+    เปิดกล้องสแกน
+  </button>
+  <button id="btnStop" class="btn btn-stop" style="display:none;" onclick="stopScan()">
+    ปิดกล้อง
+  </button>
+
+  <div id="result"></div>
+
+  <div id="manual-box">
+    <label>หรือพิมพ์รหัสด้วยตัวเอง (ถ้าสแกนไม่ติด)</label><br>
+    <input type="text" id="manual-input" placeholder="วางหรือพิมพ์รหัสที่นี่...">
+    <button class="btn btn-start" style="margin-top:10px;" onclick="submitManual()">ส่งรหัสนี้กลับ</button>
+  </div>
+
+<script>
+  const MAIN_APP_URL = "https://script.google.com/macros/s/AKfycbw5uU_TC5-WhYFABXTd69ODK2iDx_0Veplf3fZnCRxia0SYSLWJyTMMuIHhu6fuHSdO/exec";
+
+  let html5QrCode;
+  let usingNativeDetector = false;
+  let nativeStream = null;
+  let nativeDetector = null;
+  let nativeScanLoop = null;
+
+  function showResult(text, cls) {
+    const el = document.getElementById('result');
+    el.innerHTML = text;
+    el.className = cls;
+    el.style.display = 'block';
+  }
+
+  async function startScan() {
+    document.getElementById('btnStart').style.display = 'none';
+    document.getElementById('btnStop').style.display = 'block';
+    document.getElementById('reader').style.display = 'block';
+    showResult('⏳ กำลังเปิดกล้อง กรุณาอนุญาตการใช้กล้องเมื่อมีการถาม...', 'waiting');
+
+    if ('BarcodeDetector' in window) {
+      try {
+        const supportedFormats = await BarcodeDetector.getSupportedFormats();
+        if (supportedFormats.includes('code_128')) {
+          startNativeScan();
+          return;
+        }
+      } catch (e) {
+        console.log('Native detector check failed, fallback to library', e);
       }
-    } catch (e) {
-      console.log('Native detector check failed, fallback to library', e);
+    }
+    startLibraryScan();
+  }
+
+  async function startNativeScan() {
+    usingNativeDetector = true;
+    showResult('⏳ กำลังเปิดกล้อง (โหมดเร็ว)...', 'waiting');
+
+    const readerDiv = document.getElementById('reader');
+    readerDiv.innerHTML = '<video id="native-video" style="width:100%; display:block;" playsinline autoplay muted></video>';
+    const video = document.getElementById('native-video');
+
+    try {
+      nativeStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      video.srcObject = nativeStream;
+      await video.play();
+
+      nativeDetector = new BarcodeDetector({ formats: ['code_128', 'qr_code', 'ean_13'] });
+
+      nativeScanLoop = setInterval(async () => {
+        if (!video.videoWidth) return;
+        try {
+          const codes = await nativeDetector.detect(video);
+          if (codes.length > 0) {
+            stopScan();
+            sendBack(codes[0].rawValue);
+          }
+        } catch (e) { /* ignore per-frame errors */ }
+      }, 300);
+
+    } catch (err) {
+      showResult('⚠️ เปิดกล้องไม่ได้ (โหมดเร็ว)<br><small>' + err + '</small>', 'warn');
+      document.getElementById('btnStart').style.display = 'block';
+      document.getElementById('btnStop').style.display = 'none';
     }
   }
-  // ไม่รองรับ Native → ใช้ตัวเดิม (html5-qrcode)
-  startLibraryScan();
-}
 
-async function startNativeScan() {
-  usingNativeDetector = true;
-  showResult('⏳ กำลังเปิดกล้อง (โหมดเร็ว)...', 'waiting');
-
-  const readerDiv = document.getElementById('reader');
-readerDiv.innerHTML = '<video id="native-video" style="width:100%; display:block;" playsinline autoplay muted></video>';
-const video = document.getElementById('native-video');
-
-  try {
-    nativeStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
-    });
-    video.srcObject = nativeStream;
-    await video.play();
-
-    nativeDetector = new BarcodeDetector({ formats: ['code_128', 'qr_code', 'ean_13'] });
-
-    nativeScanLoop = setInterval(async () => {
-      if (!video.videoWidth) return;
-      try {
-        const codes = await nativeDetector.detect(video);
-        if (codes.length > 0) {
-          stopScan();
-          sendBack(codes[0].rawValue);
-        }
-      } catch (e) { /* ignore per-frame errors */ }
-    }, 300);
-
-  } catch (err) {
-    showResult('⚠️ เปิดกล้องไม่ได้ (โหมดเร็ว)<br><small>' + err + '</small>', 'warn');
-    document.getElementById('btnStart').style.display = 'block';
-    document.getElementById('btnStop').style.display = 'none';
-  }
-}
-
-function startLibraryScan() {
-  usingNativeDetector = false;
-  document.getElementById('reader').innerHTML = '';
-  html5QrCode = new Html5Qrcode("reader");
-
-  const config = {
-    fps: 15,
-    qrbox: function(viewfinderWidth, viewfinderHeight) {
-      let width = Math.floor(viewfinderWidth * 0.9);
-      let height = Math.floor(viewfinderHeight * 0.35);
-      return { width: width, height: height };
-    },
-    formatsToSupport: [
-      Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.QR_CODE,
-      Html5QrcodeSupportedFormats.EAN_13,
-      Html5QrcodeSupportedFormats.DATA_MATRIX
-    ]
-  };
-
-  html5QrCode.start(
-    { facingMode: "environment" },
-    config,
-    (decodedText) => {
-      stopScan();
-      sendBack(decodedText);
-    },
-    () => { /* ignore per-frame decode errors */ }
-  ).catch(err => {
-    showResult(
-      '⚠️ เปิดกล้องไม่ได้<br><small>' + err +
-      '</small><br><br>สาเหตุที่พบบ่อย:<br>1) ยังไม่ได้กดอนุญาตกล้อง<br>2) เปิดผ่านแอป LINE (ต้องเปิดผ่าน Chrome/Safari จริง)<br>3) เบราว์เซอร์รุ่นเก่าเกินไป',
-      'warn'
-    );
-    document.getElementById('btnStart').style.display = 'block';
-    document.getElementById('btnStop').style.display = 'none';
-  });
-}
-
-function stopScan() {
-  if (usingNativeDetector) {
-    if (nativeScanLoop) clearInterval(nativeScanLoop);
-    if (nativeStream) nativeStream.getTracks().forEach(t => t.stop());
+  function startLibraryScan() {
+    usingNativeDetector = false;
     document.getElementById('reader').innerHTML = '';
-  } else if (html5QrCode) {
-    html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    html5QrCode = new Html5Qrcode("reader");
+
+    const config = {
+      fps: 15,
+      qrbox: function(viewfinderWidth, viewfinderHeight) {
+        let width = Math.floor(viewfinderWidth * 0.9);
+        let height = Math.floor(viewfinderHeight * 0.35);
+        return { width: width, height: height };
+      },
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.DATA_MATRIX
+      ]
+    };
+
+    html5QrCode.start(
+      { facingMode: "environment" },
+      config,
+      (decodedText) => {
+        stopScan();
+        sendBack(decodedText);
+      },
+      () => { /* ignore per-frame decode errors */ }
+    ).catch(err => {
+      showResult(
+        '⚠️ เปิดกล้องไม่ได้<br><small>' + err +
+        '</small><br><br>สาเหตุที่พบบ่อย:<br>1) ยังไม่ได้กดอนุญาตกล้อง<br>2) เปิดผ่านแอป LINE (ต้องเปิดผ่าน Chrome/Safari จริง)<br>3) เบราว์เซอร์รุ่นเก่าเกินไป',
+        'warn'
+      );
+      document.getElementById('btnStart').style.display = 'block';
+      document.getElementById('btnStop').style.display = 'none';
+    });
   }
-  document.getElementById('btnStart').style.display = 'block';
-  document.getElementById('btnStop').style.display = 'none';
-}
 
-function submitManual() {
-  const val = document.getElementById('manual-input').value.trim();
-  if (!val) return;
-  sendBack(val);
-}
+  function stopScan() {
+    if (usingNativeDetector) {
+      if (nativeScanLoop) clearInterval(nativeScanLoop);
+      if (nativeStream) nativeStream.getTracks().forEach(t => t.stop());
+      document.getElementById('reader').innerHTML = '';
+    } else if (html5QrCode) {
+      html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    }
+    document.getElementById('btnStart').style.display = 'block';
+    document.getElementById('btnStop').style.display = 'none';
+  }
 
-function sendBack(code) {
-  const action = document.getElementById('action').value;
-  const modeLabel = usingNativeDetector ? ' (โหมดเร็ว)' : '';
-  showResult('✅ สแกนได้แล้ว!' + modeLabel + ' กำลังส่งกลับไปที่ระบบหลัก...<br><small>' + code + '</small>', 'found');
+  function submitManual() {
+    const val = document.getElementById('manual-input').value.trim();
+    if (!val) return;
+    sendBack(val);
+  }
 
-  const url = MAIN_APP_URL
-    + "?scanned=" + encodeURIComponent(code)
-    + "&action=" + encodeURIComponent(action)
-    + "&t=" + Date.now();
+  function sendBack(code) {
+    const action = document.getElementById('action').value;
+    const modeLabel = usingNativeDetector ? ' (โหมดเร็ว)' : '';
+    showResult('✅ สแกนได้แล้ว!' + modeLabel + ' กำลังส่งกลับไปที่ระบบหลัก...<br><small>' + code + '</small>', 'found');
 
-  setTimeout(() => { window.location.href = url; }, 700);
-}
+    const url = MAIN_APP_URL
+      + "?scanned=" + encodeURIComponent(code)
+      + "&action=" + encodeURIComponent(action)
+      + "&t=" + Date.now();
+
+    setTimeout(() => { window.location.href = url; }, 700);
+  }
+</script>
+</body>
+</html>
