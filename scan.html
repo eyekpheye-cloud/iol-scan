@@ -40,8 +40,8 @@ async function startNativeScan() {
   showResult('⏳ กำลังเปิดกล้อง (โหมดเร็ว)...', 'waiting');
 
   const readerDiv = document.getElementById('reader');
-  readerDiv.innerHTML = '<video id="native-video" style="width:100%; display:block;" playsinline autoplay muted></video>';
-  const video = document.getElementById('native-video');
+readerDiv.innerHTML = '<video id="native-video" style="width:100%; display:block;" playsinline autoplay muted></video>';
+const video = document.getElementById('native-video');
 
   try {
     nativeStream = await navigator.mediaDevices.getUserMedia({
