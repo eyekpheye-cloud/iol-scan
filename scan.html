@@ -108,15 +108,19 @@
     html5QrCode = new Html5Qrcode("reader");
 
     const config = {
-      fps: 10,
-      qrbox: { width: 260, height: 260 }, // จัตุรัส เหมาะกับ Data Matrix
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-        Html5QrcodeSupportedFormats.QR_CODE,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.EAN_13
-      ]
-    };
+     fps: 10,
+     qrbox: function(viewfinderWidth, viewfinderHeight) {
+       let width = Math.floor(viewfinderWidth * 0.9);
+       let height = Math.floor(viewfinderHeight * 0.35);
+       return { width: width, height: height };
+     },
+     formatsToSupport: [
+       Html5QrcodeSupportedFormats.CODE_128,
+       Html5QrcodeSupportedFormats.QR_CODE,
+       Html5QrcodeSupportedFormats.EAN_13,
+       Html5QrcodeSupportedFormats.DATA_MATRIX
+     ]
+   };
 
     html5QrCode.start(
       { facingMode: "environment" },
